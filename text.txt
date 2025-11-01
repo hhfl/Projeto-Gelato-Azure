@@ -1,0 +1,70 @@
+# Gelato-SDK
+
+
+
+from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
+from azure.ai.ml import MLClient
+
+try:
+    credential = DefaultAzureCredential()
+    credential.get_token("https://management.azure.com/.default")
+except Exception as ex:
+    credential = InteractiveBrowserCredential()
+
+
+
+
+ml_client = MLClient.from_config(credential=credential)
+%%writefile src/sorvetes-training.py
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve
+
+print("Loading Data...")
+sorvetes = pd.read_csv('sorvetes.csv')
+
+X, y = sorvetes[['Temperaturas']].values, sorvetes['Vendas'].values
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=0)
+
+reg = 0.01
+
+print('Training a logistic regression model with regularization rate of', reg)
+model = LogisticRegression(C=1/reg, solver="liblinear").fit(X_train, y_train)
+
+y_hat = model.predict(X_test)
+acc = np.average(y_hat == y_test)
+print('Accuracy:', acc)
+
+y_scores = model.predict(X_test)
+acc = np.average(y_hat == y_test)
+print('Accuracy:', acc)
+
+y_scores = model.predict_proba(X_test)
+auc = roc_auc_score(y_test,y_scores[:,1])
+print('AUC: ' + str(auc))
+
+
+
+
+from azure.ai.ml import command
+
+job = command(
+    code="./src",
+    command="python sorvetes-training.py",
+    environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu@latest",
+    compute="cpuinstancia",
+    display_name="sorvetes-pythonv2-train",
+    experiment_name="sorvetes-training"
+)
+
+returned_job = ml_client.create_or_update(job)
+aml_url = returned_job.studio_url
+print("Monitor your job at", aml_url)
